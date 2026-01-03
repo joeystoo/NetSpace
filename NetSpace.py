@@ -13,10 +13,21 @@ def tick():
         device.incoming = []
 #device behavours
 def endpointBehaviour(device):
+    if not hasattr(device, "ARPTable"):
+        device.ARPTable = {}
     while device.queue:
         origin, frame = device.queue.pop(0)
-        print(f"recieved packet containing: {frame.payload.content} on port: {origin} on IP: {device.IP}")
-    return
+        if frame.etherType == "0x0800":
+            print(f"recieved packet containing: {frame.payload.content} on port: {origin} on IP: {device.IP}")
+        elif frame.etherType == "0x0806": #add ARP table storing even if packet is not for device (contains free information)
+            if frame.op == "req":
+                request = frame.payload
+                if request.targetIP == device.IP:
+                    Frame(device.MAC, frame.srcMAC, "0x0806", ARPPacket("reply", device.MAC, device.IP, request.senderMAC, request.senderIP))
+            elif frame.op == "reply":
+                reply = frame.payload
+                if reply.targetIP == device.IP:
+                    device.ARPTable[reply.senderIP] = reply.senderMAC
 def endpointSend(device):
     if not hasattr(device, "ARPTable"):
         device.ARPTable = {}
