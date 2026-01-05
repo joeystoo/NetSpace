@@ -12,26 +12,24 @@ def tick():
         device.queue = device.incoming
         device.incoming = []
 #device behavours
-def endpointBehaviour(device):
+def endPointBehaviour(device):
     if not hasattr(device, "ARPTable"):
-        device.ARPTable = {}
+            device.ARPTable = {}
     while device.queue:
         origin, frame = device.queue.pop(0)
         if frame.etherType == "0x0800":
-            print(f"recieved packet containing: {frame.payload.content} on port: {origin} on IP: {device.IP}")
-        elif frame.etherType == "0x0806": #add ARP table storing even if packet is not for device (contains free information)
-            if frame.op == "req":
-                request = frame.payload
-                if request.targetIP == device.IP:
-                    Frame(device.MAC, frame.srcMAC, "0x0806", ARPPacket("reply", device.MAC, device.IP, request.senderMAC, request.senderIP))
-            elif frame.op == "reply":
-                reply = frame.payload
-                if reply.targetIP == device.IP:
-                    device.ARPTable[reply.senderIP] = reply.senderMAC
-def endpointSend(device):
-    if not hasattr(device, "ARPTable"):
-        device.ARPTable = {}
-    
+            packet = frame.payload
+            print(f"Device {device.IP} received IP packet from {packet.src}: {packet.content}")
+        elif frame.etherType == "0x0806":
+            ARP = frame.payload
+            if ARP.op == 1:
+                device.ARPTable[ARP.senderIP] = ARP.senderMAC
+                if ARP.targetIP == device.IP:
+                    packet = ARPPacket(2, device.MAC, device.IP, ARP.senderMAC, ARP.senderIP)
+                    sendFrame = Frame(device.MAC, ARP.senderMAC, "0x0806", packet)
+                    device.send(origin, sendFrame)
+            elif ARP.op == 2:
+                device.ARPTable[ARP.senderIP] = ARP.senderMAC
 
 
 def hubBehaviour(device):
@@ -54,7 +52,8 @@ def switchBehaviour(device):
         else:
             outName = device.CAMTable[frame.destMAC]
             outPort = device.ports.get(outName)
-            outPort.linkTo.parent.incoming.append((outPort.linkTo.name, frame))
+            if outPort and outPort.linkTo:
+                outPort.linkTo.parent.incoming.append((outPort.linkTo.name, frame))
 
 class Device:
     def __init__(self, IP, MAC, device_type):
@@ -98,7 +97,7 @@ class Device:
         port.linkTo.parent.incoming.append((port.linkTo.name, frame))
 
     def process(self):
-        return
+        self.send("p1", Frame(self.MAC, "FF:FF:FF:FF:FF:FF", "0x0800", IPPacket(self.IP, None, "Who has IP?")))
 
 
         
@@ -139,9 +138,9 @@ def disconnect(IP1, port1, IP2, port2):
 def sendIP(IP, port, frame):
     ipObj(IP).send(port, frame)
 
-newDevice(1234, "01:23", "hub")
+newDevice(1234, "01:23", "router")
 addPort(1234, "p1")
-newDevice(5678, "45:67", "NAT router")
+newDevice(5678, "45:67", "router")
 addPort(5678, "p1")
 connect(1234, "p1", 5678, "p1")
 sendIP(1234, "p1", Frame(None, None, "0x0800", IPPacket(None, None, "hiiiiiii!")))
