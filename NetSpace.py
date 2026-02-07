@@ -1,4 +1,5 @@
 import time
+import random
 from collections import deque
 TICK_TIME = 1
 deviceRegistry = {}
@@ -14,7 +15,7 @@ def tick():
 #device behavours
 def endPointBehaviour(device):
     if not hasattr(device, "ARPTable"):
-            device.ARPTable = {}
+           device.ARPTable = {}
     while device.queue:
         origin, frame = device.queue.pop(0)
         if frame.etherType == "0x0800":
@@ -30,6 +31,36 @@ def endPointBehaviour(device):
                     device.send(origin, sendFrame)
             elif ARP.op == 2:
                 device.ARPTable[ARP.senderIP] = ARP.senderMAC
+    if not hasattr(device, "ARPWait"):
+        device.ARPWait = []
+    randomIP = random.randint(1234, 1235)
+    if randomIP != device.IP:
+        if randomIP not in device.ARPTable:
+            sendingPacket = IPPacket(device.IP, randomIP, "helllo!")
+            sendingFrame = Frame(device.MAC, "FF:FF:FF:FF:FF:FF" , "0x0800", sendingPacket)
+            device.ARPWait.append(sendingFrame)
+            ARPreq = ARPPacket(1, device.MAC, device.IP, None, randomIP)
+            ARP = Frame(device.MAC, "FF:FF:FF:FF:FF:FF" , "0x0806", ARPreq)
+            for port in device.ports.values():
+                device.send(port.name, ARP)
+        else:
+            sendingPacket = IPPacket(device.IP, randomIP, "helllo!")
+            destMAC = device.ARPTable[randomIP]
+            sendingFrame = Frame(device.MAC, destMAC, "0x0800", sendingPacket)
+            for port in device.ports.values():
+                device.send(port.name, sendingFrame)
+    for waiting in device.ARPWait[:]:
+        if waiting.payload.dest in device.ARPTable:
+            destMAC = device.ARPTable[waiting.payload.dest]
+            waiting.destMAC = destMAC
+            for port in device.ports.values():
+                device.send(port.name, waiting)
+                break
+            device.ARPWait.remove(waiting)
+
+
+
+
 
 
 def hubBehaviour(device):
@@ -56,8 +87,8 @@ def switchBehaviour(device):
                 outPort.linkTo.parent.incoming.append((outPort.linkTo.name, frame))
 
 class Device:
-    def __init__(self, IP, MAC, device_type):
-        self.type = device_type
+    def __init__(self, IP, MAC, devType):
+        self.type = devType
         self.ports = {}
         self.IP = IP
         self.MAC = MAC
@@ -97,7 +128,7 @@ class Device:
         port.linkTo.parent.incoming.append((port.linkTo.name, frame))
 
     def process(self):
-        self.send("p1", Frame(self.MAC, "FF:FF:FF:FF:FF:FF", "0x0800", IPPacket(self.IP, None, "Who has IP?")))
+        self.type(self)
 
 
         
@@ -138,12 +169,11 @@ def disconnect(IP1, port1, IP2, port2):
 def sendIP(IP, port, frame):
     ipObj(IP).send(port, frame)
 
-newDevice(1234, "01:23", "router")
+newDevice(1234, "01:23", endPointBehaviour)
 addPort(1234, "p1")
-newDevice(5678, "45:67", "router")
-addPort(5678, "p1")
-connect(1234, "p1", 5678, "p1")
-sendIP(1234, "p1", Frame(None, None, "0x0800", IPPacket(None, None, "hiiiiiii!")))
+newDevice(1235, "45:67", endPointBehaviour)
+addPort(1235, "p1")
+connect(1235, "p1", 1234, "p1")
 
 while True:
     start = time.perf_counter()
