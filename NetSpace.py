@@ -1,18 +1,31 @@
+# netspace - a gamified network simulator
+# by Joey S. (https://github.com/joeystoo)
+# copyrighted 2026 ©
+
+# IMPORTS
 import time
 import random
-from collections import deque
-TICK_TIME = 1
+import pygame
+import sys
 deviceRegistry = {}
+gameLog = []
+# ESSENTIAL FUNCTIONS
 def ipObj(IP):
     return deviceRegistry.get(IP)
-def tick():
+def gameTick():
     devices = deviceRegistry.values()
     for device in devices:
         device.process()
     for device in devices:
         device.queue = device.incoming
         device.incoming = []
-#device behavours
+def log(string, var):
+    var.append(string)
+    if len(var) > 10:
+        var.pop(0)
+
+
+# DEVICE BEHAVIOURS
 def endPointBehaviour(device):
     if not hasattr(device, "ARPTable"):
            device.ARPTable = {}
@@ -20,7 +33,7 @@ def endPointBehaviour(device):
         origin, frame = device.queue.pop(0)
         if frame.etherType == "0x0800":
             packet = frame.payload
-            print(f"Device {device.IP} received IP packet from {packet.src}: {packet.content}")
+            log(f"Device {device.IP} received IP packet from {packet.src}: {packet.content}", gameLog)
         elif frame.etherType == "0x0806":
             ARP = frame.payload
             if ARP.op == 1:
@@ -58,11 +71,6 @@ def endPointBehaviour(device):
                 break
             device.ARPWait.remove(waiting)
 
-
-
-
-
-
 def hubBehaviour(device):
     while device.queue:
         origin, frame = device.queue.pop(0)
@@ -85,7 +93,7 @@ def switchBehaviour(device):
             outPort = device.ports.get(outName)
             if outPort and outPort.linkTo:
                 outPort.linkTo.parent.incoming.append((outPort.linkTo.name, frame))
-
+# NET SIMULATION
 class Device:
     def __init__(self, IP, MAC, devType):
         self.type = devType
@@ -130,8 +138,6 @@ class Device:
     def process(self):
         self.type(self)
 
-
-        
 class Port:
     def __init__(self, parent, name):
         self.parent = parent
@@ -139,6 +145,7 @@ class Port:
         self.name = name
     def link(self, port):
         self.linkTo = port
+# PACKET STRUCTURES
 class Frame:
     def __init__(self, srcMAC, destMAC, etherType, payload):
         self.srcMAC = srcMAC
@@ -157,7 +164,7 @@ class ARPPacket:
         self.senderIP = senderIP
         self.targetMAC = targetMAC
         self.targetIP = targetIP
-#command managing code yaya fun
+# HELPER FUNCTIONS
 def newDevice(IP, MAC, device_type):
     Device(IP, MAC, device_type)
 def addPort(IP, name):
@@ -175,10 +182,47 @@ newDevice(1235, "45:67", endPointBehaviour)
 addPort(1235, "p1")
 connect(1235, "p1", 1234, "p1")
 
-while True:
-    start = time.perf_counter()
-    tick()
-    elapsed = time.perf_counter() - start
-    sleepTime = TICK_TIME - elapsed
-    if sleepTime > 0:
-        time.sleep(sleepTime)
+# INIT
+pygame.init()
+displayInf = pygame.display.Info()
+screen_width = displayInf.current_w
+screen_height = displayInf.current_h
+width = 800
+height = 800
+screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
+font = pygame.font.SysFont(None, 24)
+pygame.display.set_caption("NetSpace")
+clock = pygame.time.Clock()
+# TIMING SETUP
+framerate = 60
+tickrate = 5
+frameCount = 0
+
+running = True
+
+# MAIN LOOP
+while running:
+    frameCount = frameCount + 1
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.VIDEORESIZE:
+            width, height = event.size
+            screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
+    # logic
+    if frameCount >= framerate/tickrate:
+        frameCount = 0
+        gameTick()
+    screen.fill((0, 0, 0))
+    # drawing
+    padding = 10
+    y = padding
+    for line in gameLog[:]:
+        surf = font.render(str(line), True, (255, 255, 255))
+        screen.blit(surf, (padding, y))
+        y += surf.get_height() + 2
+    pygame.display.flip()
+    clock.tick(framerate)
+
+pygame.quit()
+sys.exit()
